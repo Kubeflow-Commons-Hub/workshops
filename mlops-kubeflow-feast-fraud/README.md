@@ -1,5 +1,7 @@
 # MLOps workshop: Kubeflow + Feast (fraud use case, CPU-only)
 
+This folder lives under the **`workshops/` Git repo** (see [`../README.md`](../README.md) for how to add `origin` and push the whole workshops tree).
+
 Shareable materials for a **60–75 minute** notebook-driven session on OpenShift: **Feast**, **Kubeflow Pipelines**, and **Kubeflow Trainer v2** (`TrainJob` + upstream **`torch-distributed`** `ClusterTrainingRuntime`). **No GPUs** — training uses `pytorch/pytorch:*-cpu` and no `nvidia.com/gpu` requests.
 
 ## What attendees need
