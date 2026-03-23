@@ -1,0 +1,43 @@
+# Same as ../manifests/trainjob-fraud-workshop.yaml (duplicate for discoverability).
+# Replace REPLACE_NAMESPACE before apply.
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: fraud-workshop-train
+  namespace: REPLACE_NAMESPACE
+spec:
+  runtimeRef:
+    name: torch-distributed
+    kind: ClusterTrainingRuntime
+  trainer:
+    image: pytorch/pytorch:2.5.1-cpu
+    command: ["python", "/workspace/train.py"]
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        volumes:
+          - name: workshop-training-files
+            configMap:
+              name: workshop-training
+          - name: workshop-out
+            emptyDir: {}
+        containers:
+          - name: node
+            volumeMounts:
+              - name: workshop-training-files
+                mountPath: /workspace/train.py
+                subPath: train.py
+              - name: workshop-training-files
+                mountPath: /workspace/data/transactions.csv
+                subPath: transactions.csv
+              - name: workshop-out
+                mountPath: /workspace/out
