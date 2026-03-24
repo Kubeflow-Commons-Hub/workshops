@@ -16,8 +16,9 @@ Step-by-step install order, apply script, and what your OpenShift project needs 
 
 ## Pipeline visualization
 
-- **With Kubeflow Pipelines:** upload [`pipeline/fraud_workshop_pipeline.yaml`](pipeline/fraud_workshop_pipeline.yaml) in the Pipelines UI → create a run → open the **Graph/DAG** view. Details: **[`pipeline/VISUALIZATION.md`](pipeline/VISUALIZATION.md)**.
-- **Without KFP:** use the static Mermaid diagram in that doc (smoke pipeline = single step).
+- **Primary (authoritative DAG):** Kubeflow Pipelines **web UI** — upload [`pipeline/fraud_workshop_pipeline.yaml`](pipeline/fraud_workshop_pipeline.yaml), create a run, open the **Graph** tab. URL is usually the `ml-pipeline-ui` **Route** in `kubeflow` (see [`cluster-setup/README.md`](cluster-setup/README.md)).
+- **In the notebook:** [`notebooks/WORKSHOP.ipynb`](notebooks/WORKSHOP.ipynb) section 3 prints a **clickable UI link** (via `oc`), draws a **NetworkX/Matplotlib** schematic DAG, and can **submit a run** with `kfp` + `oc whoami -t` (`SUBMIT_KFP_RUN = True`).
+- More detail: [`pipeline/VISUALIZATION.md`](pipeline/VISUALIZATION.md).
 
 ## Facilitator prep (summary)
 
