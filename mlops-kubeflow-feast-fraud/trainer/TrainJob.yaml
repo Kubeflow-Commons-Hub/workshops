@@ -10,8 +10,17 @@ spec:
     name: torch-distributed
     kind: ClusterTrainingRuntime
   trainer:
-    image: pytorch/pytorch:2.5.1-cpu
-    command: ["python", "/workspace/train.py"]
+    image: public.ecr.aws/docker/library/python:3.12-slim-bookworm
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -euo pipefail
+        export PYTHONPATH="/workspace/out/.pypkgs:${PYTHONPATH:-}"
+        mkdir -p /workspace/out/.pypkgs
+        pip install --no-cache-dir -q --target /workspace/out/.pypkgs pandas
+        pip install --no-cache-dir -q --target /workspace/out/.pypkgs torch --index-url https://download.pytorch.org/whl/cpu
+        python /workspace/train.py
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -26,18 +35,21 @@ spec:
       spec:
         volumes:
           - name: workshop-training-files
-            configMap:
-              name: workshop-training
+            projected:
+              sources:
+                - configMap:
+                    name: workshop-training
+                    items:
+                      - key: train.py
+                        path: train.py
+                      - key: transactions.csv
+                        path: data/transactions.csv
           - name: workshop-out
             emptyDir: {}
         containers:
           - name: node
             volumeMounts:
               - name: workshop-training-files
-                mountPath: /workspace/train.py
-                subPath: train.py
-              - name: workshop-training-files
-                mountPath: /workspace/data/transactions.csv
-                subPath: transactions.csv
+                mountPath: /workspace
               - name: workshop-out
                 mountPath: /workspace/out

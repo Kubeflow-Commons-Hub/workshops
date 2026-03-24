@@ -1,64 +1,94 @@
 # Cluster setup — workshop dependencies
 
-Your **namespace** can hold ConfigMaps and (once CRDs exist) `TrainJob` objects. **Installing** Kubeflow Trainer and Kubeflow Pipelines requires **cluster-admin** (or an equivalent platform team).
+## What this cluster has (admin install summary)
 
-## What was applied on your current cluster
+| Component | Namespace | Notes |
+|-----------|-----------|--------|
+| **Kubeflow Trainer v2** | `kubeflow-trainer` | Helm chart `kubeflow-trainer` (v2.1.0) + JobSet dependency; **`ClusterTrainingRuntime/torch-distributed`** installed |
+| **Kubeflow Pipelines** | `kubeflow` | Kustomize `platform-agnostic` for **KFP 2.4.0** + **OpenShift fixes** (see below) |
+| **Feast (Redis online store)** | `feast` | Bitnami **Redis** (standalone, no auth) for optional `feast materialize` → online |
+| **Workshop workloads** | `worshop-example` | `ConfigMap/workshop-training` + **`TrainJob/fraud-workshop-train`** (CPU; validated **Completed**) |
 
-- **Namespace:** `worshop-example` (as reported by `oc projects`).
-- **Created:** `ConfigMap/workshop-training` (training script + CSV).
-- **Not available yet:** `TrainJob` (`trainer.kubeflow.org/v1alpha1`) — CRD missing → install **Kubeflow Trainer** / Training Operator v2 first.
-- **Pipeline UI:** No pipeline-related API resources visible to your user in this sandbox → install **Kubeflow Pipelines** (or **OpenShift AI / RHOAI Data Science Pipelines**) for DAG visualization and runs.
+### KFP UI (this cluster)
 
-## 1) Namespace-scoped resources (any user with project admin)
+After `oc expose svc ml-pipeline-ui -n kubeflow`, the console URL is:
 
-From this directory:
+```bash
+oc get route ml-pipeline-ui -n kubeflow -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+Upload `pipeline/fraud_workshop_pipeline.yaml`, create a run, open the **Graph** tab.
+
+### Feast Redis endpoint (optional, from pods in `worshop-example`)
+
+`redis://feast-redis-master.feast.svc.cluster.local:6379` — point a Feast `feature_store.yaml` **online_store** here if you move off embedded SQLite for teams.
+
+### OpenShift-specific fixes applied (upstream KFP is not ROSA-ready out of the box)
+
+1. **SCC:** `system:serviceaccounts:kubeflow` bound to **`anyuid`** and **`privileged`** so KFP images (UID **1000**, **seccomp** annotations) can run. **Tighten before production** (custom SCC, patches, or OpenShift AI Pipelines instead).
+2. **MinIO image:** `gcr.io/ml-pipeline/minio:…` manifest missing → patched Deployment to **`quay.io/minio/minio:RELEASE.2024-05-10T01-41-38Z`**.
+3. **MinIO + MySQL volumes:** `securityContext.fsGroup: 1000` on Deployments so PVC mounts are writable.
+4. **TrainJob image:** Docker Hub rate limits / bad PyTorch tags → **`public.ecr.aws/docker/library/python:3.12-slim-bookworm`** + `pip install --target /workspace/out/.pypkgs` (see `manifests/trainjob-fraud-workshop.yaml`).
+5. **TrainJob volumes:** **Projected** `ConfigMap` (single mount at `/workspace`) — duplicate `volumeMounts` with the same name are invalid.
+
+---
+
+## 1) Namespace-scoped resources (workshop attendees)
 
 ```bash
 export WORKSHOP_NAMESPACE="worshop-example"   # or your project
 ./apply-workshop-manifests.sh
 ```
 
-This applies `workshop-training` ConfigMap and `TrainJob` (the latter succeeds only after Trainer CRDs exist).
+---
 
-## 2) Cluster-scoped: Kubeflow Trainer v2 (cluster admin)
+## 2) Install Kubeflow Trainer v2 (cluster admin) — recap
 
-1. Install the **Kubeflow Training Operator** / **Trainer** release that ships **`ClusterTrainingRuntime`** and **`TrainJob`** (see [kubeflow/training-operator](https://github.com/kubeflow/training-operator) Helm or manifests).
-2. Confirm the default PyTorch runtime:
-
-   ```bash
-   oc get clustertrainingruntime torch-distributed
-   ```
-
-3. Grant your workshop namespace SA (or user) RBAC to create `trainjobs` in that namespace.
-
-4. Re-run `./apply-workshop-manifests.sh` and watch the job:
-
-   ```bash
-   oc get trainjob,pods -n "$WORKSHOP_NAMESPACE"
-   ```
-
-## 3) Cluster-scoped: Kubeflow Pipelines (for runs + **graph** UI)
-
-Install **Kubeflow Pipelines** as documented for your distribution (upstream Kubeflow manifest, **OpenShift AI** component, etc.).
-
-After install, discover the UI route (names vary):
+From a checkout of [kubeflow/training-operator](https://github.com/kubeflow/training-operator):
 
 ```bash
-# Examples — adjust namespace to where KFP / DS Pipelines runs
-oc get routes -A | grep -iE 'pipeline|kubeflow|datascience'
+cd charts/kubeflow-trainer
+helm dependency update
+helm upgrade --install kubeflow-trainer . \
+  --namespace kubeflow-trainer --create-namespace \
+  --set runtimes.torchDistributed.enabled=true \
+  --set dataCache.enabled=false
 ```
 
-In the UI:
+```bash
+oc get clustertrainingruntime torch-distributed
+```
 
-1. **Upload pipeline** → choose `pipeline/fraud_workshop_pipeline.yaml` (or compile from `.py` in the notebook).
-2. **Create run** → open the run → **Graph** (or **DAG**) shows the pipeline structure.
+---
 
-Without a KFP server, see [pipeline/VISUALIZATION.md](../pipeline/VISUALIZATION.md) for static diagrams and options.
+## 3) Install Kubeflow Pipelines 2.4 (cluster admin) — recap
 
-## 4) Notebook / Jupyter
+```bash
+export PIPELINE_VERSION=2.4.0
+oc apply -k "github.com/kubeflow/pipelines/manifests/kustomize/cluster-scoped-resources?ref=$PIPELINE_VERSION"
+oc apply -k "github.com/kubeflow/pipelines/manifests/kustomize/env/platform-agnostic?ref=$PIPELINE_VERSION"
+```
 
-Deploy or use your platform’s **Notebook** / **Workbench** so attendees run `WORKSHOP.ipynb` with `oc`, `feast`, `pandas`, `pyarrow`, and optionally `kfp`.
+Then apply the **OpenShift mitigations** in the table above, expose the UI:
 
-## 5) Feast
+```bash
+oc expose svc ml-pipeline-ui -n kubeflow
+```
 
-The lab uses the **Feast CLI** from the notebook against the **local** `feast_repo` (file/SQLite stores). No cluster operator is strictly required for the minimal path. For team-wide registry/online store, extend with your chosen Feast deployment pattern.
+---
+
+## 4) Feast — Redis only (optional cluster backing store)
+
+```bash
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm upgrade --install feast-redis bitnami/redis -n feast --create-namespace \
+  --set architecture=standalone --set auth.enabled=false
+```
+
+The minimal workshop still runs **`feast apply`** with **local file + SQLite** in the notebook; Redis is for **online** materialization when you extend the lab.
+
+---
+
+## 5) Notebook / Jupyter
+
+Deploy or use your platform’s **Notebook** / **Workbench** with `oc`, `feast`, `pandas`, `pyarrow`, and `kfp`.
