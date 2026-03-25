@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: feast-remote-config
+  namespace: mlops-workshop
+data:
+  feature_store.yaml: |
+    project: fraud_detection
+    provider: local
+    registry:
+      registry_type: remote
+      path: feast-registry-service.mlops-workshop.svc.cluster.local:6567
+    offline_store:
+      type: remote
+      host: feast-offline-service.mlops-workshop.svc.cluster.local
+      port: 8815
+    entity_key_serialization_version: 3
